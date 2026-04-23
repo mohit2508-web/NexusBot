@@ -56,10 +56,13 @@ const handleChat = async (req, res) => {
 
         // Optionally store the conversation round in Supabase if configured
         if (supabase && sessionId) {
-            await supabase.from('chat_history').insert([
+            const { error: dbError } = await supabase.from('chat_history').insert([
                 { session_id: sessionId, role: 'user', content: lastMessage },
                 { session_id: sessionId, role: 'assistant', content: botReply }
-            ]).catch(err => console.error("Supabase insert error:", err));
+            ]);
+            if (dbError) {
+                console.error("Supabase insert error:", dbError);
+            }
         }
 
         res.json({ reply: botReply });
