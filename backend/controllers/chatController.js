@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 const { createClient } = require('@supabase/supabase-js');
 
 // Initialize Supabase Client if keys exist
@@ -6,8 +6,8 @@ const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-// Initialize Gemini Client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy_key');
+// Initialize Groq Client
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const COLLEGE_NAME = process.env.COLLEGE_NAME || "Your College Name";
 const BOT_NAME = process.env.BOT_NAME || "NexusBot";
@@ -30,29 +30,25 @@ const handleChat = async (req, res) => {
             return res.status(400).json({ error: "Messages array is required." });
         }
 
-        // Initialize Gemini model
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-flash-latest",
-            systemInstruction: systemInstruction 
-        });
-
-        // Convert conversation tracking structure to Gemini's expected format
-        let history = messages.slice(0, -1).map(msg => ({
-            role: msg.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: msg.content }]
-        }));
-        
-        // Gemini STRICTLY requires the history to start with a 'user' message.
-        // It cannot start with the bot's initial UI graphic message.
-        if (history.length > 0 && history[0].role === 'model') {
-            history.shift();
-        }
+        // Format history for Groq
+        let history = [
+            { role: 'system', content: systemInstruction },
+            ...messages.map(msg => ({
+                role: msg.role === 'assistant' ? 'assistant' : 'user',
+                content: msg.content
+            }))
+        ];
         
         const lastMessage = messages[messages.length - 1].content;
 
-        const chat = model.startChat({ history });
-        const result = await chat.sendMessage(lastMessage);
-        const botReply = result.response.text();
+        const chatCompletion = await groq.chat.completions.create({
+            messages: history,
+            model: "llama-3.1-8b-instant",
+            temperature: 0.7,
+            max_tokens: 1024
+        });
+
+        const botReply = chatCompletion.choices[0]?.message?.content;
 
         // Optionally store the conversation round in Supabase if configured
         if (supabase && sessionId) {
